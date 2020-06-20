@@ -10,36 +10,50 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// Info Empresa ..
 type Info struct {
 	DadosEmpresa Empresa `json:"empresa,omitempty"`
 }
+
+// Empresa dados ..
 type Empresa struct {
-	Cnpj              string `json:"cnpj"`
-	UltimaAtualizacao string `json:"ultima_atualizacao"`
-	Abertura          string `json:"abertura"`
-	Nome              string `json:"nome"`
-	Fantasia          string `json:"fantasia"`
-	Status            string `json:"status"`
-	Tipo              string `json:"tipo"`
-	Situacao          string `json:"situacao"`
-	CapitalSocial     string `json:"capital_social"`
-	Telefone          string `json:"telefone"`
-	Email             string `json:"email"`
-	Endereco          struct {
-		Bairro      string `json:"bairro"`
-		Logradouro  string `json:"logradouro"`
-		Numero      string `json:"numero"`
-		Cep         string `json:"cep"`
-		Municipio   string `json:"munincipio"`
-		Uf          string `json:"uf"`
-		Complemento string `json:"complemento"`
-	} `json:"endereco,omitempty"`
-	Atividade []struct {
-		Text string `json:"text"`
-		Code string `json:"code"`
-	} `json:"atividade_principal,omitempty"`
+	Cnpj              string               `json:"cnpj"`
+	UltimaAtualizacao string               `json:"ultima_atualizacao"`
+	Abertura          string               `json:"abertura"`
+	Nome              string               `json:"nome"`
+	Fantasia          string               `json:"fantasia"`
+	Status            string               `json:"status"`
+	Tipo              string               `json:"tipo"`
+	Situacao          string               `json:"situacao"`
+	CapitalSocial     string               `json:"capital_social"`
+	DadosEndereco     Endereco             `json:"endereco,omitempty"`
+	DadosContato      Contato              `json:"contato,omitempty"`
+	DadosAtividade    []AtividadePrincipal `json:"atividade_principal"`
 }
 
+type Endereco struct {
+	Bairro      string `json:"bairro"`
+	Logradouro  string `json:"logradouro"`
+	Numero      string `json:"numero"`
+	Cep         string `json:"cep"`
+	Municipio   string `json:"municipio"`
+	Uf          string `json:"uf"`
+	Complemento string `json:"complemento"`
+}
+
+// Contato Empresa
+type Contato struct {
+	Telefone string `json:"telefone"`
+	Email    string `json:"email"`
+}
+
+// AtividadePrincipal Empresa
+type AtividadePrincipal struct {
+	Text string `json:"text"`
+	Code string `json:"code"`
+}
+
+// verificar se um número é inteiro
 func isInt(s string) bool {
 	for _, c := range s {
 		if !unicode.IsDigit(c) {
@@ -48,6 +62,7 @@ func isInt(s string) bool {
 	}
 	return true
 }
+
 func GetCnpjEndpoint(w http.ResponseWriter, req *http.Request) {
 
 	params := mux.Vars(req)
@@ -67,29 +82,30 @@ func GetCnpjEndpoint(w http.ResponseWriter, req *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(dataMensagem)
 			return
+		} else if err != nil {
+			fmt.Printf("A solicitação HTTP falhou com erro %s\n", err)
 		} else {
+
+			var info Info
+
+			//populando os dados do JSON na struct EMPRESA
+			err = json.Unmarshal(dataMensagem, &info.DadosEmpresa)
+
+			//populando os dados do JSON na struct EMPRESA->ENDERECO
+			err = json.Unmarshal(dataMensagem, &info.DadosEmpresa.DadosEndereco)
+
+			//populando os dados do JSON na struct EMPRESA->CONTATO
+			err = json.Unmarshal(dataMensagem, &info.DadosEmpresa.DadosContato)
+
 			if err != nil {
-				fmt.Printf("A solicitação HTTP falhou com erro %s\n", err)
-			} else {
-
-				var info Info
-
-				//populando os dados do JSON na struct EMPRESA
-				err = json.Unmarshal(dataMensagem, &info.DadosEmpresa)
-
-				//populando os dados do JSON na struct ENDERECO
-				err = json.Unmarshal(dataMensagem, &info.DadosEmpresa.Endereco)
-
-				if err != nil {
-					fmt.Println(err)
-					return
-				}
-
-				dataR, _ := json.Marshal(info)
-				w.Header().Set("Content-Type", "application/json")
-				w.Write(dataR)
+				fmt.Println(err)
+				return
 			}
+			dataR, _ := json.Marshal(info)
 
+			fmt.Println(string(dataR))
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(dataR)
 		}
 
 	} else {
