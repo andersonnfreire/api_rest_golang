@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"unicode"
@@ -17,20 +16,21 @@ type Info struct {
 
 // Empresa dados ..
 type Empresa struct {
-	Cnpj              string               `json:"cnpj"`
-	UltimaAtualizacao string               `json:"ultima_atualizacao"`
-	Abertura          string               `json:"abertura"`
-	Nome              string               `json:"nome"`
-	Fantasia          string               `json:"fantasia"`
-	Status            string               `json:"status"`
-	Tipo              string               `json:"tipo"`
-	Situacao          string               `json:"situacao"`
-	CapitalSocial     string               `json:"capital_social"`
-	DadosEndereco     Endereco             `json:"endereco,omitempty"`
-	DadosContato      Contato              `json:"contato,omitempty"`
-	DadosAtividade    []AtividadePrincipal `json:"atividade_principal"`
+	Cnpj              string             `json:"cnpj"`
+	UltimaAtualizacao string             `json:"ultima_atualizacao"`
+	Abertura          string             `json:"abertura"`
+	Nome              string             `json:"nome"`
+	Fantasia          string             `json:"fantasia"`
+	Status            string             `json:"status"`
+	Tipo              string             `json:"tipo"`
+	Situacao          string             `json:"situacao"`
+	CapitalSocial     string             `json:"capital_social"`
+	DadosEndereco     Endereco           `json:"endereco,omitempty"`
+	DadosContato      Contato            `json:"contato,omitempty"`
+	DadosAtividade    AtividadePrincipal `json:"atividade_principal"`
 }
 
+// Endereço da empresa
 type Endereco struct {
 	Bairro      string `json:"bairro"`
 	Logradouro  string `json:"logradouro"`
@@ -41,14 +41,14 @@ type Endereco struct {
 	Complemento string `json:"complemento"`
 }
 
-// Contato Empresa
+// Contato da Empresa
 type Contato struct {
 	Telefone string `json:"telefone"`
 	Email    string `json:"email"`
 }
 
-// AtividadePrincipal Empresa
-type AtividadePrincipal struct {
+// AtividadePrincipal da Empresa
+type AtividadePrincipal []struct {
 	Text string `json:"text"`
 	Code string `json:"code"`
 }
@@ -62,60 +62,99 @@ func isInt(s string) bool {
 	}
 	return true
 }
-
+func connected() (ok bool) {
+	_, err := http.Get("http://clients3.google.com/generate_204")
+	if err != nil {
+		return false
+	}
+	return true
+}
 func GetCnpjEndpoint(w http.ResponseWriter, req *http.Request) {
+	//verificando se possui acesso a internet
+	if !connected() {
+		// caso o usuario não informou corretamente o cnpj
+		info := `{erro:'SEM INTERNET'}`
 
+		mensagemErro, _ := json.Marshal(info)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(mensagemErro)
+		return
+	}
 	params := mux.Vars(req)
 
+	//verificando se o usuario o digitou uma string no cnpj
 	if isInt(params["id"]) {
 
-		response, err := http.Get("https://www.receitaws.com.br/v1/cnpj/" + params["id"])
+		response, _ := http.Get("https://www.receitaws.com.br/v1/cnpj/" + params["id"])
 
-		dataMensagem, _ := ioutil.ReadAll(response.Body)
-
-		payload := make(map[string]interface{})
-		json.Unmarshal(dataMensagem, &payload)
-
-		//verificando se o CNPJ é valido
-		if payload["status"] == "ERROR" {
-			dataMensagem, _ := json.Marshal(payload)
+		// verificando caso aconteça algum erro na resposta da requisição
+		if response.StatusCode == 400 {
+			dataErr, _ := ioutil.ReadAll(response.Body)
 			w.Header().Set("Content-Type", "application/json")
-			w.Write(dataMensagem)
+			w.Write(dataErr)
 			return
-		} else if err != nil {
-			fmt.Printf("A solicitação HTTP falhou com erro %s\n", err)
-		} else {
+		} else if response.StatusCode == 200 {
+			dataMensagem, _ := ioutil.ReadAll(response.Body)
 
-			var info Info
+			// caso tenha erros ao ler o response.Body, esse map será responsável por armazenar dessa leitura
+			statusMensagem := make(map[string]interface{})
 
-			//populando os dados do JSON na struct EMPRESA
-			err = json.Unmarshal(dataMensagem, &info.DadosEmpresa)
+			json.Unmarshal(dataMensagem, &statusMensagem)
 
-			//populando os dados do JSON na struct EMPRESA->ENDERECO
-			err = json.Unmarshal(dataMensagem, &info.DadosEmpresa.DadosEndereco)
-
-			//populando os dados do JSON na struct EMPRESA->CONTATO
-			err = json.Unmarshal(dataMensagem, &info.DadosEmpresa.DadosContato)
-
-			if err != nil {
-				fmt.Println(err)
+			//verificando se o CNPJ é valido e verificando se possui algum erro
+			if statusMensagem["status"] == "ERROR" {
+				dataMensagem, _ := json.Marshal(statusMensagem)
+				w.Header().Set("Content-Type", "application/json")
+				w.Write(dataMensagem)
 				return
-			}
-			dataR, _ := json.Marshal(info)
+			} else {
 
-			fmt.Println(string(dataR))
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(dataR)
+				var info Info
+				var errors Erros
+				//populando os dados do JSON na struct EMPRESA
+				err := json.Unmarshal(dataMensagem, &info.DadosEmpresa)
+
+				//verifica se os dados da empresa foram inseridos
+				if MensagemErro(errors, err, w) {
+					return
+				} else {
+
+					//populando os dados do JSON na struct EMPRESA->ENDERECO
+					err := json.Unmarshal(dataMensagem, &info.DadosEmpresa.DadosEndereco)
+
+					//verifica se o Endereco da empresa foi inserido
+					if MensagemErro(errors, err, w) {
+						return
+					} else {
+
+						//populando os dados do JSON na struct EMPRESA->CONTATO
+						err := json.Unmarshal(dataMensagem, &info.DadosEmpresa.DadosContato)
+
+						//verifica se o Contato da empresa foi inserido
+						if MensagemErro(errors, err, w) {
+							return
+						}
+
+						dataR, _ := json.Marshal(info)
+
+						w.Header().Set("Content-Type", "application/json")
+						w.Write(dataR)
+						return
+					}
+				}
+			}
 		}
 
 	} else {
-
+		// caso o usuario não informou corretamente o cnpj
 		info := `{erro:'Informe corretamente o seu CNPJ'}`
 
 		mensagemErro, _ := json.Marshal(info)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(mensagemErro)
+		return
 	}
 
 }
