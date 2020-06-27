@@ -16,18 +16,18 @@ type Info struct {
 
 // Empresa dados ..
 type Empresa struct {
-	Cnpj              string             `json:"cnpj"`
-	UltimaAtualizacao string             `json:"ultima_atualizacao"`
-	Abertura          string             `json:"abertura"`
-	Nome              string             `json:"nome"`
-	Fantasia          string             `json:"fantasia"`
-	Status            string             `json:"status"`
-	Tipo              string             `json:"tipo"`
-	Situacao          string             `json:"situacao"`
-	CapitalSocial     string             `json:"capital_social"`
-	DadosEndereco     Endereco           `json:"endereco,omitempty"`
-	DadosContato      Contato            `json:"contato,omitempty"`
-	DadosAtividade    AtividadePrincipal `json:"atividade_principal"`
+	Cnpj              string               `json:"cnpj"`
+	UltimaAtualizacao string               `json:"ultima_atualizacao"`
+	Abertura          string               `json:"abertura"`
+	Nome              string               `json:"nome"`
+	Fantasia          string               `json:"fantasia"`
+	Status            string               `json:"status"`
+	Tipo              string               `json:"tipo"`
+	Situacao          string               `json:"situacao"`
+	CapitalSocial     string               `json:"capital_social"`
+	DadosEndereco     Endereco             `json:"endereco,omitempty"`
+	DadosContato      Contato              `json:"contato,omitempty"`
+	DadosAtividade    []AtividadePrincipal `json:"atividade_principal,omitempty"`
 }
 
 // Endereço da empresa
@@ -48,7 +48,7 @@ type Contato struct {
 }
 
 // AtividadePrincipal da Empresa
-type AtividadePrincipal []struct {
+type AtividadePrincipal struct {
 	Text string `json:"text"`
 	Code string `json:"code"`
 }
@@ -62,99 +62,113 @@ func isInt(s string) bool {
 	}
 	return true
 }
-func connected() (ok bool) {
-	_, err := http.Get("http://clients3.google.com/generate_204")
-	if err != nil {
-		return false
-	}
-	return true
-}
+
 func GetCnpjEndpoint(w http.ResponseWriter, req *http.Request) {
-	//verificando se possui acesso a internet
-	if !connected() {
-		// caso o usuario não informou corretamente o cnpj
-		info := `{erro:'SEM INTERNET'}`
+	//requisitando a seguinte url para verificar se possui acesso a internet
 
-		mensagemErro, _ := json.Marshal(info)
+	response, err := http.Get("http://clients3.google.com/generate_204")
+	var infoErro mensagemErro
+	var errors conversaoErro
+	var info Info
 
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(mensagemErro)
+	// verificando se possui acesso a internet
+	if verificarConexao(infoErro, errors, err, w) {
 		return
-	}
-	params := mux.Vars(req)
+	} else if response.StatusCode == 204 { // caso tenha acesso a internet
+		params := mux.Vars(req)
 
-	//verificando se o usuario o digitou uma string no cnpj
-	if isInt(params["id"]) {
+		//verificando se o usuario o digitou uma string no cnpj
+		if isInt(params["id"]) {
 
-		response, _ := http.Get("https://www.receitaws.com.br/v1/cnpj/" + params["id"])
+			// fazendo a requisição para obter os dados da empresa de acordo com o cnpj
+			response, err := http.Get("https://www.receitaws.com.br/v1/cnpj/" + params["id"])
 
-		// verificando caso aconteça algum erro na resposta da requisição
-		if response.StatusCode == 400 {
-			dataErr, _ := ioutil.ReadAll(response.Body)
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(dataErr)
-			return
-		} else if response.StatusCode == 200 {
-			dataMensagem, _ := ioutil.ReadAll(response.Body)
+			// verificando se possui erros
+			if formatandoMensagemErro(errors, err, w) {
+				return
+			}
 
-			// caso tenha erros ao ler o response.Body, esse map será responsável por armazenar dessa leitura
-			statusMensagem := make(map[string]interface{})
+			dataMensagem, err := ioutil.ReadAll(response.Body)
 
-			json.Unmarshal(dataMensagem, &statusMensagem)
-
-			//verificando se o CNPJ é valido e verificando se possui algum erro
-			if statusMensagem["status"] == "ERROR" {
-				dataMensagem, _ := json.Marshal(statusMensagem)
-				w.Header().Set("Content-Type", "application/json")
-				w.Write(dataMensagem)
+			// verificando se possui erros ao ler o escopo da resposta
+			if formatandoMensagemErro(errors, err, w) {
+				return
+			} else if respostaHttp(dataMensagem, response.StatusCode, infoErro, errors, err, w) { // se caso a resposta http for != 200 e encerrado
 				return
 			} else {
 
-				var info Info
-				var errors Erros
-				//populando os dados do JSON na struct EMPRESA
-				err := json.Unmarshal(dataMensagem, &info.DadosEmpresa)
+				// map para armazenar possiveis erros de CNPJ invalido
+				statusMensagem := make(map[string]string)
 
-				//verifica se os dados da empresa foram inseridos
-				if MensagemErro(errors, err, w) {
+				err = json.Unmarshal(dataMensagem, &statusMensagem)
+
+				//verificando se o CNPJ é valido e verificando se possui algum erro
+				if statusMensagem["status"] == "ERROR" {
+					infoErro.Status = "Erro: " + http.StatusText(http.StatusBadGateway)
+					infoErro.Informacao = statusMensagem["message"]
+					infoErro.Codigo = http.StatusBadGateway
+
+					dataMensagem, err := json.Marshal(infoErro)
+
+					// verificando se aconteceu algum erro na formatacao da mensagem de erro
+					if formatandoMensagemErro(errors, err, w) {
+						return
+					}
+
+					w.Header().Set("Content-Type", "application/json")
+					w.Write(dataMensagem)
 					return
 				} else {
 
-					//populando os dados do JSON na struct EMPRESA->ENDERECO
-					err := json.Unmarshal(dataMensagem, &info.DadosEmpresa.DadosEndereco)
+					//populando os dados do JSON na struct EMPRESA
+					err = json.Unmarshal(dataMensagem, &info.DadosEmpresa)
 
-					//verifica se o Endereco da empresa foi inserido
-					if MensagemErro(errors, err, w) {
+					//verifica se os dados da empresa foram inseridos
+					if formatandoMensagemErro(errors, err, w) {
 						return
 					} else {
 
-						//populando os dados do JSON na struct EMPRESA->CONTATO
-						err := json.Unmarshal(dataMensagem, &info.DadosEmpresa.DadosContato)
+						//populando os dados do JSON na struct EMPRESA->ENDERECO
+						err = json.Unmarshal(dataMensagem, &info.DadosEmpresa.DadosEndereco)
 
-						//verifica se o Contato da empresa foi inserido
-						if MensagemErro(errors, err, w) {
+						//verifica se o Endereco da empresa foi inserido
+						if formatandoMensagemErro(errors, err, w) {
+							return
+						} else {
+
+							//populando os dados do JSON na struct EMPRESA->CONTATO
+							err = json.Unmarshal(dataMensagem, &info.DadosEmpresa.DadosContato)
+
+							//verifica se o Contato da empresa foi inserido
+							if formatandoMensagemErro(errors, err, w) {
+								return
+							}
+
+							dataR, err := json.Marshal(info)
+
+							//verifica se os dados foram inseridos com sucesso
+							if formatandoMensagemErro(errors, err, w) {
+								return
+							}
+
+							w.Header().Set("Content-Type", "application/json")
+							w.Write(dataR)
 							return
 						}
-
-						dataR, _ := json.Marshal(info)
-
-						w.Header().Set("Content-Type", "application/json")
-						w.Write(dataR)
-						return
 					}
 				}
 			}
+
+		} else {
+			// caso o usuario não informou corretamente o cnpj
+			infoErro.Status = "Erro: " + http.StatusText(http.StatusBadRequest)
+			infoErro.Codigo = http.StatusBadRequest
+			infoErro.Informacao = "Verifique se o CNPJ foi informado corretamente"
+			mensagemErro, _ := json.Marshal(info)
+
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(mensagemErro)
+			return
 		}
-
-	} else {
-		// caso o usuario não informou corretamente o cnpj
-		info := `{erro:'Informe corretamente o seu CNPJ'}`
-
-		mensagemErro, _ := json.Marshal(info)
-
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(mensagemErro)
-		return
 	}
-
 }
