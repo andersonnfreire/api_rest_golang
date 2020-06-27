@@ -154,19 +154,20 @@ DELETE FROM dados WHERE dt_nascimento = "1977-10-10";
 /* Exibir quais médicos realizaram as consultas mostrando o código e o nome do
 mesmo além do código e data data da consulta; */
 
-SELECT m.id as CodigoMedico, m.nome as NomeMedico, c.id as CodigoConsulta, c.data DataConsulta FROM medicos m, consultas c WHERE c.medico_id = m.id
+SELECT m.id as CodigoMedico, m.nome as NomeMedico, c.id as CodigoConsulta, c.data DataConsulta 
+FROM medicos as m INNER JOIN consultas as c on c.medico_id = m.id
 
 /* Exibir quais pacientes consultaram, mostrando o código e nome do paciente, código,
 data da consulta, se foi paga ou não e o nome do médico que consultou; */
 
-SELECT p.id as CodigoPaciente, p.nome as NomePaciente, c.id as CodigoConsulta, c.data as DataConsulta, c.pago as StatusPagamento, m.nome as NomeMedico FROM medicos m, consultas c, pacientes p WHERE c.medico_id = m.id and c.paciente_id = p.id
-
+SELECT p.id as CodigoPaciente, p.nome as NomePaciente, c.id as CodigoConsulta, c.data as DataConsulta, c.pago as StatusPagamento, m.nome as NomeMedico 
+FROM medicos as m INNER JOIN consultas as c INNER JOIN pacientes as p on c.medico_id = m.id and c.paciente_id = p.id
 
 /* Exibir quantas consultas cada médico tem e o valor total pago das mesmas
 juntamente com o código e nome do médico; */
 
-SELECT COUNT(c.medico_id) as QuantidadeDeConsultas, SUM(c.valor) as ValorTotal, c.medico_id as CodigoMedico, m.nome as NomeMedico FROM medicos m, consultas c WHERE c.medico_id = m.id group by c.medico_id
-
+SELECT COUNT(c.medico_id) as QuantidadeDeConsultas, SUM(c.valor) as ValorTotal, c.medico_id as CodigoMedico, m.nome as NomeMedico 
+FROM medicos as m INNER JOIN consultas as c on c.medico_id = m.id and c.pago = 1 group by c.medico_id
 
 
 
